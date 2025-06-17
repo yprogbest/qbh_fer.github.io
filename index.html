@@ -3,213 +3,148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QBH-FER表情認識システム</title>
+    <title>QBH-FER 表情認識システム</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0"></script>
 </head>
 <body>
     <div class="app-container">
         <header class="app-header">
             <div class="container">
-                <h1 class="app-title">QBH-FER表情認識システム</h1>
-                <p class="app-subtitle">Quantum-Bio-Hybrid Facial Expression Recognition</p>
+                <h1 class="app-title">QBH-FER</h1>
+                <p class="app-subtitle">Quantum-Bio-Hybrid 表情認識システム</p>
             </div>
         </header>
 
-        <main class="main-content">
+        <nav class="tab-nav">
             <div class="container">
-                <div class="function-tabs">
-                    <button class="tab-button active" data-tab="upload">
-                        <span class="tab-icon">📁</span>
+                <div class="tab-buttons">
+                    <button class="tab-btn active" data-tab="upload">
                         画像アップロード
                     </button>
-                    <button class="tab-button" data-tab="camera">
-                        <span class="tab-icon">📷</span>
+                    <button class="tab-btn" data-tab="camera">
                         カメラ撮影
                     </button>
-                    <button class="tab-button" data-tab="realtime">
-                        <span class="tab-icon">🎬</span>
+                    <button class="tab-btn" data-tab="realtime">
                         リアルタイム分析
                     </button>
                 </div>
+            </div>
+        </nav>
 
+        <main class="main-content">
+            <div class="container">
                 <!-- Upload Tab -->
                 <div class="tab-content active" id="upload-tab">
                     <div class="upload-section">
-                        <div class="upload-area" id="upload-area">
-                            <div class="upload-prompt">
-                                <span class="upload-icon">📤</span>
-                                <p>画像ファイルをここにドロップするか、クリックして選択してください</p>
-                                <input type="file" id="file-input" accept="image/*" hidden>
-                                <button class="btn btn--primary" onclick="document.getElementById('file-input').click()">
-                                    ファイルを選択
-                                </button>
+                        <div class="card upload-card">
+                            <div class="card__body">
+                                <div class="upload-area" id="upload-area">
+                                    <div class="upload-icon">📸</div>
+                                    <h3>画像をアップロード</h3>
+                                    <p>ドラッグ&ドロップまたはクリックして画像を選択</p>
+                                    <input type="file" id="file-input" accept="image/*" class="hidden">
+                                </div>
                             </div>
                         </div>
-                        <canvas id="upload-canvas" class="image-canvas hidden"></canvas>
-                        <button class="btn btn--primary btn--full-width mt-8 hidden" id="analyze-upload-btn">
-                            分析開始
-                        </button>
+                        <div class="result-panel card" id="upload-result" style="display: none;">
+                            <div class="card__body">
+                                <h3>分析結果</h3>
+                                <div class="emotion-bars" id="upload-emotions"></div>
+                                <div class="quantum-metrics" id="upload-metrics"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Camera Tab -->
                 <div class="tab-content" id="camera-tab">
                     <div class="camera-section">
-                        <div class="camera-container">
-                            <video id="camera-video" class="camera-preview" autoplay muted playsinline></video>
-                            <canvas id="camera-canvas" class="image-canvas hidden"></canvas>
-                            <div class="camera-overlay" id="camera-overlay">
-                                <button class="btn btn--primary" id="start-camera-btn">
-                                    カメラを開始
-                                </button>
+                        <div class="card camera-card">
+                            <div class="card__body">
+                                <div class="camera-container">
+                                    <video id="camera-video" autoplay muted></video>
+                                    <canvas id="camera-canvas" style="display: none;"></canvas>
+                                </div>
+                                <div class="camera-controls">
+                                    <button class="btn btn--primary" id="start-camera">カメラ開始</button>
+                                    <button class="btn btn--secondary" id="capture-photo" style="display: none;">写真撮影</button>
+                                    <button class="btn btn--outline" id="stop-camera" style="display: none;">停止</button>
+                                </div>
                             </div>
                         </div>
-                        <div class="camera-controls">
-                            <button class="btn btn--primary" id="capture-btn" disabled>
-                                📸 撮影
-                            </button>
-                            <button class="btn btn--secondary" id="stop-camera-btn" disabled>
-                                停止
-                            </button>
+                        <div class="result-panel card" id="camera-result" style="display: none;">
+                            <div class="card__body">
+                                <h3>分析結果</h3>
+                                <div class="emotion-bars" id="camera-emotions"></div>
+                                <div class="quantum-metrics" id="camera-metrics"></div>
+                            </div>
                         </div>
-                        <button class="btn btn--primary btn--full-width mt-8 hidden" id="analyze-camera-btn">
-                            分析開始
-                        </button>
                     </div>
                 </div>
 
-                <!-- Realtime Tab -->
+                <!-- Real-time Tab -->
                 <div class="tab-content" id="realtime-tab">
                     <div class="realtime-section">
-                        <div class="camera-container">
-                            <video id="realtime-video" class="camera-preview" autoplay muted playsinline></video>
-                            <canvas id="realtime-canvas" class="realtime-overlay"></canvas>
-                            <div class="camera-overlay" id="realtime-overlay">
-                                <button class="btn btn--primary" id="start-realtime-btn">
-                                    リアルタイム分析開始
-                                </button>
-                            </div>
-                        </div>
-                        <div class="realtime-controls">
-                            <button class="btn btn--secondary" id="stop-realtime-btn" disabled>
-                                分析停止
-                            </button>
-                        </div>
-                        <div class="realtime-stats" id="realtime-stats">
-                            <div class="stat-card">
-                                <span class="stat-label">処理フレーム数</span>
-                                <span class="stat-value" id="frame-count">0</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-label">平均信頼度</span>
-                                <span class="stat-value" id="avg-confidence">0%</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Results Section -->
-                <div class="results-section" id="results-section">
-                    <h2 class="results-title">分析結果</h2>
-                    <div class="results-grid">
-                        <div class="result-card primary-result">
-                            <h3>表情認識結果</h3>
-                            <div class="emotion-result">
-                                <span class="emotion-name" id="detected-emotion">-</span>
-                                <span class="confidence-score" id="confidence-score">0%</span>
-                            </div>
-                        </div>
-
-                        <div class="result-card">
-                            <h3>量子特徴抽出</h3>
-                            <div class="metric-list">
-                                <div class="metric-item">
-                                    <span class="metric-label">特徴次元数</span>
-                                    <span class="metric-value" id="quantum-dimensions">-</span>
+                        <div class="stats-grid">
+                            <div class="card stat-card">
+                                <div class="card__body">
+                                    <h4>主要感情</h4>
+                                    <div class="primary-emotion" id="primary-emotion">中立</div>
                                 </div>
-                                <div class="metric-item">
-                                    <span class="metric-label">量子もつれ相関</span>
-                                    <span class="metric-value" id="quantum-correlation">-</span>
+                            </div>
+                            <div class="card stat-card">
+                                <div class="card__body">
+                                    <h4>信頼度</h4>
+                                    <div class="confidence-value" id="confidence-value">0%</div>
                                 </div>
-                                <div class="metric-item">
-                                    <span class="metric-label">重ね合わせ状態</span>
-                                    <span class="metric-value" id="quantum-superposition">-</span>
+                            </div>
+                            <div class="card stat-card">
+                                <div class="card__body">
+                                    <h4>処理フレーム</h4>
+                                    <div class="frame-count" id="frame-count">0</div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="result-card">
-                            <h3>ニューロモルフィック処理</h3>
-                            <div class="metric-list">
-                                <div class="metric-item">
-                                    <span class="metric-label">スパイク頻度</span>
-                                    <span class="metric-value" id="spike-frequency">-</span>
+                        <div class="card chart-card">
+                            <div class="card__body">
+                                <div class="chart-header">
+                                    <h3>リアルタイム感情変化グラフ</h3>
+                                    <div class="chart-controls">
+                                        <button class="btn btn--primary" id="start-realtime">開始</button>
+                                        <button class="btn btn--secondary" id="pause-realtime" style="display: none;">一時停止</button>
+                                        <button class="btn btn--outline" id="clear-data">クリア</button>
+                                    </div>
                                 </div>
-                                <div class="metric-item">
-                                    <span class="metric-label">消費電力削減</span>
-                                    <span class="metric-value" id="power-reduction">-</span>
-                                </div>
-                                <div class="metric-item">
-                                    <span class="metric-label">処理効率向上</span>
-                                    <span class="metric-value" id="efficiency-improvement">-</span>
+                                <div class="chart-container">
+                                    <canvas id="emotion-chart"></canvas>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="result-card">
-                            <h3>群知能最適化</h3>
-                            <div class="metric-list">
-                                <div class="metric-item">
-                                    <span class="metric-label">粒子群収束率</span>
-                                    <span class="metric-value" id="particle-convergence">-</span>
-                                </div>
-                                <div class="metric-item">
-                                    <span class="metric-label">蟻コロニー効率</span>
-                                    <span class="metric-value" id="ant-efficiency">-</span>
-                                </div>
-                                <div class="metric-item">
-                                    <span class="metric-label">最適化スコア</span>
-                                    <span class="metric-value" id="optimization-score">-</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="result-card">
-                            <h3>マルチモーダル融合</h3>
-                            <div class="metric-list">
-                                <div class="metric-item">
-                                    <span class="metric-label">視覚特徴重み</span>
-                                    <span class="metric-value" id="visual-weight">-</span>
-                                </div>
-                                <div class="metric-item">
-                                    <span class="metric-label">統合処理効率</span>
-                                    <span class="metric-value" id="integration-efficiency">-</span>
-                                </div>
-                                <div class="metric-item">
-                                    <span class="metric-label">時系列安定性</span>
-                                    <span class="metric-value" id="temporal-stability">-</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="result-card full-width">
-                            <h3>詳細特徴分析</h3>
-                            <div class="feature-analysis" id="feature-analysis">
-                                <div class="feature-item">
-                                    <span class="feature-label">平均輝度</span>
-                                    <span class="feature-value" id="avg-brightness">-</span>
-                                </div>
-                                <div class="feature-item">
-                                    <span class="feature-label">コントラスト</span>
-                                    <span class="feature-value" id="contrast-level">-</span>
-                                </div>
-                                <div class="feature-item">
-                                    <span class="feature-label">色相分布</span>
-                                    <span class="feature-value" id="hue-distribution">-</span>
-                                </div>
-                                <div class="feature-item">
-                                    <span class="feature-label">対称性指数</span>
-                                    <span class="feature-value" id="symmetry-index">-</span>
+                        <div class="card quantum-panel">
+                            <div class="card__body">
+                                <h3>量子・ニューロモルフィック処理</h3>
+                                <div class="quantum-grid">
+                                    <div class="quantum-metric">
+                                        <label>量子相関係数</label>
+                                        <div class="metric-value" id="quantum-correlation">0.000</div>
+                                    </div>
+                                    <div class="quantum-metric">
+                                        <label>重ね合わせ状態</label>
+                                        <div class="metric-value" id="superposition">0.000</div>
+                                    </div>
+                                    <div class="quantum-metric">
+                                        <label>スパイク頻度</label>
+                                        <div class="metric-value" id="spike-frequency">0 Hz</div>
+                                    </div>
+                                    <div class="quantum-metric">
+                                        <label>消費電力削減</label>
+                                        <div class="metric-value" id="power-reduction">0%</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -217,13 +152,6 @@
                 </div>
             </div>
         </main>
-
-        <div class="loading-overlay hidden" id="loading-overlay">
-            <div class="loading-spinner">
-                <div class="quantum-loader"></div>
-                <p>QBH-FER システム分析中...</p>
-            </div>
-        </div>
     </div>
 
     <script src="app.js"></script>
