@@ -1,460 +1,511 @@
-// Application data from JSON
+// 量子表情認識アプリ - メインJavaScript
+
+// アプリケーションデータ
 const appData = {
-  "emotions": ["喜び", "悲しみ", "怒り", "驚き", "恐怖", "嫌悪", "軽蔑", "中立"],
-  "chartColors": {
-    "喜び": "#ff6384",
-    "悲しみ": "#36a2eb", 
-    "怒り": "#ff9f40",
-    "驚き": "#4bc0c0",
-    "恐怖": "#9966ff",
-    "嫌悪": "#c9cbcf",
-    "軽蔑": "#ff6384",
-    "中立": "#36a2eb"
-  },
-  "systemConfig": {
-    "updateInterval": 1000,
-    "historyDuration": 30000,
-    "confidenceThreshold": 0.5,
-    "maxDataPoints": 30
-  },
-  "quantumFeatures": {
-    "dimensions": [256, 512, 768],
-    "correlationRange": [0.7, 1.0],
-    "superpositionRange": [0.6, 1.0]
-  },
-  "neuromorphicMetrics": {
-    "spikeFrequencyRange": [100, 200],
-    "powerReductionRange": [70, 90],
-    "efficiencyRange": [200, 300]
+  emotions: [
+    {"name": "喜び", "english": "happy", "color": "#ff6384"},
+    {"name": "悲しみ", "english": "sad", "color": "#36a2eb"},
+    {"name": "怒り", "english": "angry", "color": "#ff9f40"},
+    {"name": "驚き", "english": "surprised", "color": "#4bc0c0"},
+    {"name": "恐怖", "english": "fearful", "color": "#9966ff"},
+    {"name": "嫌悪", "english": "disgusted", "color": "#c9cbcf"},
+    {"name": "軽蔑", "english": "neutral", "color": "#ff6b9d"},
+    {"name": "中立", "english": "neutral", "color": "#95e1d3"}
+  ],
+  systemData: {
+    analysisParameters: {
+      frameRate: 1000,
+      dataRetention: 30,
+      confidenceThreshold: 0.5,
+      displayDuration: 30000
+    }
   }
 };
 
-// Global variables
-let emotionChart = null;
-let realtimeInterval = null;
-let cameraStream = null;
-let isRealtimeActive = false;
-let frameCount = 0;
+// アプリケーション状態
+const appState = {
+  isModelLoaded: false,
+  isProcessing: false,
+  isStreamActive: false,
+  frameCount: 0,
+  totalConfidence: 0,
+  currentEmotion: '未検出',
+  emotionData: {},
+  emotionChart: null,
+  videoStream: null,
+  detectionInterval: null,
+  cameraDevice: null
+};
 
-// Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
-  initTabNavigation();
-  initUploadFunctionality();
-  initCameraFunctionality();
-  initRealtimeFunctionality();
+// DOM要素の参照
+const elements = {
+  video: document.getElementById('video'),
+  overlay: document.getElementById('overlay'),
+  loadingContainer: document.getElementById('loading-container'),
+  loadingStatus: document.getElementById('loading-status'),
+  startButton: document.getElementById('start-button'),
+  stopButton: document.getElementById('stop-button'),
+  frameCount: document.getElementById('frame-count'),
+  avgConfidence: document.getElementById('avg-confidence'),
+  currentEmotion: document.getElementById('current-emotion'),
+  emotionChart: document.getElementById('emotion-chart'),
+  tabButtons: document.querySelectorAll('.tab-btn'),
+  tabPanes: document.querySelectorAll('.tab-pane')
+};
+
+// タブ切り替え機能
+elements.tabButtons.forEach(button => {
+  button.addEventListener('click', () => {
+    const tabName = button.getAttribute('data-tab');
+    
+    // アクティブタブの切り替え
+    elements.tabButtons.forEach(btn => btn.classList.remove('active'));
+    button.classList.add('active');
+    
+    // タブコンテンツの切り替え
+    elements.tabPanes.forEach(pane => pane.classList.remove('active'));
+    document.getElementById(`${tabName}-tab`).classList.add('active');
+    
+    // リアルタイムタブからの切り替え時、カメラを停止
+    if (tabName !== 'realtime' && appState.isStreamActive) {
+      stopCamera();
+    }
+  });
 });
 
-// Tab Navigation
-function initTabNavigation() {
-  const tabButtons = document.querySelectorAll('.tab-btn');
-  const tabContents = document.querySelectorAll('.tab-content');
+// Face-API.jsモデルのロード
+async function loadFaceApiModels() {
+  try {
+    updateLoadingStatus('Face-API.jsモデルを読み込み中...');
+    
+    // 修正: モデルロードパスを修正
+    const MODEL_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights/';
+    
+    // すべてのモデルを並行して読み込む
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
+    ]);
+    
+    appState.isModelLoaded = true;
+    updateLoadingStatus('モデルの読み込みが完了しました！');
+    
+    // ローディング画面を非表示
+    setTimeout(() => {
+      elements.loadingContainer.classList.add('hidden');
+    }, 1000);
+    
+    console.log('Face-API.jsモデルがロードされました');
+    initializeApp();
+  } catch (error) {
+    console.error('モデルのロード中にエラーが発生しました:', error);
+    updateLoadingStatus('モデルのロード中にエラーが発生しました。ページを更新してください。');
+  }
+}
 
-  tabButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      const tabId = button.getAttribute('data-tab');
-      
-      // Remove active class from all tabs and contents
-      tabButtons.forEach(btn => btn.classList.remove('active'));
-      tabContents.forEach(content => content.classList.remove('active'));
-      
-      // Add active class to clicked tab and corresponding content
-      button.classList.add('active');
-      document.getElementById(`${tabId}-tab`).classList.add('active');
+// ローディングステータスの更新
+function updateLoadingStatus(message) {
+  elements.loadingStatus.textContent = message;
+}
+
+// カメラストリームの開始
+async function startCamera() {
+  try {
+    if (!appState.isModelLoaded) {
+      // モデルが未ロードの場合も開始を許可
+      console.warn('Face-API.jsモデルがまだロード中です。少し待ってから再試行してください。');
+    }
+    
+    // すでに実行中の場合は何もしない
+    if (appState.isStreamActive) return;
+    
+    // 開始ボタンを無効化して複数回クリックを防止
+    elements.startButton.disabled = true;
+    updateLoadingStatus('カメラへのアクセスを要求中...');
+    elements.loadingContainer.classList.remove('hidden');
+    
+    // カメラストリームの取得（シンプルなオプションを使用）
+    appState.videoStream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false
     });
-  });
+    
+    // ビデオ要素にストリームを設定
+    elements.video.srcObject = appState.videoStream;
+    
+    // ビデオが読み込まれたらオーバーレイのサイズを調整
+    elements.video.onloadedmetadata = () => {
+      // キャンバスサイズをビデオサイズに合わせる
+      const { videoWidth, videoHeight } = elements.video;
+      elements.overlay.width = videoWidth;
+      elements.overlay.height = videoHeight;
+      console.log(`ビデオサイズ設定: ${videoWidth}x${videoHeight}`);
+    };
+    
+    // ビデオの再生開始を確実に行う
+    try {
+      await elements.video.play();
+      console.log('ビデオの再生が開始されました');
+    } catch (playError) {
+      console.error('ビデオの再生開始に失敗しました:', playError);
+      throw new Error('ビデオの再生開始に失敗しました。ブラウザの自動再生ポリシーを確認してください。');
+    }
+    
+    // 処理フラグを更新
+    appState.isStreamActive = true;
+    appState.frameCount = 0;
+    appState.totalConfidence = 0;
+    
+    // ボタン状態の更新
+    elements.startButton.disabled = true;
+    elements.stopButton.disabled = false;
+    
+    // 統計情報のリセット
+    updateStats(0, 0, '検出中...');
+    
+    // 定期的な検出処理の開始
+    startDetection();
+    
+    // ローディング画面を非表示
+    elements.loadingContainer.classList.add('hidden');
+    
+    console.log('カメラストリームが開始されました');
+  } catch (error) {
+    console.error('カメラの開始中にエラーが発生しました:', error);
+    elements.startButton.disabled = false;
+    elements.loadingContainer.classList.add('hidden');
+    showError('カメラの起動に失敗しました: ' + (error.message || 'カメラへのアクセス権限を確認してください。'));
+  }
 }
 
-// Upload Functionality
-function initUploadFunctionality() {
-  const uploadArea = document.getElementById('upload-area');
-  const fileInput = document.getElementById('file-input');
+// カメラストリームの停止
+function stopCamera() {
+  // 検出処理の停止
+  clearInterval(appState.detectionInterval);
+  appState.detectionInterval = null;
   
-  uploadArea.addEventListener('click', () => fileInput.click());
+  // ビデオストリームの停止
+  if (appState.videoStream) {
+    appState.videoStream.getTracks().forEach(track => track.stop());
+    appState.videoStream = null;
+  }
   
-  uploadArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadArea.classList.add('dragover');
-  });
+  // ビデオ要素のソースをクリア
+  elements.video.srcObject = null;
   
-  uploadArea.addEventListener('dragleave', () => {
-    uploadArea.classList.remove('dragover');
-  });
+  // オーバーレイをクリア
+  const ctx = elements.overlay.getContext('2d');
+  ctx.clearRect(0, 0, elements.overlay.width, elements.overlay.height);
   
-  uploadArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadArea.classList.remove('dragover');
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      processUploadedImage(files[0]);
+  // 処理フラグの更新
+  appState.isStreamActive = false;
+  
+  // ボタン状態の更新
+  elements.startButton.disabled = false;
+  elements.stopButton.disabled = true;
+  
+  console.log('カメラストリームが停止されました');
+}
+
+// 顔検出と表情認識の開始
+function startDetection() {
+  // 既存の検出処理をクリア
+  if (appState.detectionInterval) {
+    clearInterval(appState.detectionInterval);
+  }
+  
+  // 新しい検出処理を設定
+  appState.detectionInterval = setInterval(async () => {
+    if (!appState.isStreamActive || appState.isProcessing) return;
+    
+    appState.isProcessing = true;
+    try {
+      await detectFace();
+    } catch (error) {
+      console.error('顔検出中にエラーが発生しました:', error);
+    } finally {
+      appState.isProcessing = false;
+    }
+  }, appData.systemData.analysisParameters.frameRate);
+  
+  console.log(`顔検出を開始しました（間隔: ${appData.systemData.analysisParameters.frameRate}ms）`);
+}
+
+// 顔検出と表情認識の処理
+async function detectFace() {
+  if (!elements.video.paused && !elements.video.ended) {
+    // 顔検出と表情認識のオプション
+    const options = new faceapi.TinyFaceDetectorOptions({
+      inputSize: 224,
+      scoreThreshold: 0.5
+    });
+    
+    try {
+      // 顔検出と表情認識の実行
+      const detections = await faceapi.detectAllFaces(elements.video, options)
+        .withFaceLandmarks()
+        .withFaceExpressions();
+      
+      // キャンバスのコンテキスト取得
+      const ctx = elements.overlay.getContext('2d');
+      ctx.clearRect(0, 0, elements.overlay.width, elements.overlay.height);
+      
+      // 検出結果があれば表示
+      if (detections && detections.length > 0) {
+        // 最初の顔のみ処理（複数検出の場合）
+        const detection = detections[0];
+        const expressions = detection.expressions;
+        const box = detection.detection.box;
+        
+        // 最も確率が高い表情を特定
+        let maxExpression = { name: 'neutral', confidence: 0 };
+        Object.entries(expressions).forEach(([name, confidence]) => {
+          if (confidence > maxExpression.confidence) {
+            maxExpression = { name, confidence };
+          }
+        });
+        
+        // 表情に対応する日本語名を取得
+        const emotionInfo = getEmotionInfo(maxExpression.name);
+        
+        // 顔の境界ボックスを描画
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = emotionInfo.color;
+        ctx.strokeRect(box.x, box.y, box.width, box.height);
+        
+        // 表情ラベルの背景を描画
+        const labelText = `${emotionInfo.name}: ${Math.round(maxExpression.confidence * 100)}%`;
+        const labelWidth = ctx.measureText(labelText).width + 10;
+        const labelHeight = 26;
+        
+        ctx.fillStyle = emotionInfo.color;
+        ctx.fillRect(box.x, box.y - labelHeight - 4, labelWidth, labelHeight);
+        
+        // 表情ラベルのテキストを描画
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(labelText, box.x + 5, box.y - 10);
+        
+        // グラフデータの更新
+        updateEmotionData(expressions);
+        
+        // 統計情報の更新
+        appState.frameCount++;
+        appState.totalConfidence += maxExpression.confidence;
+        const avgConfidence = appState.totalConfidence / appState.frameCount;
+        
+        updateStats(
+          appState.frameCount,
+          Math.round(avgConfidence * 100),
+          emotionInfo.name
+        );
+      } else {
+        // 顔が検出されなかった場合
+        updateEmotionData({}); // 空のデータでグラフを更新
+      }
+    } catch (error) {
+      console.error('顔検出処理中にエラーが発生しました:', error);
+    }
+  }
+}
+
+// 表情情報の取得
+function getEmotionInfo(expressionName) {
+  // Face-API.jsの表情名をアプリの感情名にマッピング
+  const mapping = {
+    'happy': '喜び',
+    'sad': '悲しみ',
+    'angry': '怒り',
+    'surprised': '驚き',
+    'fearful': '恐怖',
+    'disgusted': '嫌悪',
+    'neutral': '中立'
+  };
+  
+  // 対応する感情情報を取得
+  const emotion = appData.emotions.find(e => e.english === expressionName) || 
+                  appData.emotions.find(e => e.english === 'neutral');
+  
+  return {
+    name: mapping[expressionName] || '不明',
+    color: emotion ? emotion.color : '#cccccc'
+  };
+}
+
+// 統計情報の更新
+function updateStats(frames, confidence, emotion) {
+  elements.frameCount.textContent = frames;
+  elements.avgConfidence.textContent = `${confidence}%`;
+  elements.currentEmotion.textContent = emotion;
+  appState.currentEmotion = emotion;
+}
+
+// グラフデータの更新
+function updateEmotionData(expressions) {
+  const now = Date.now();
+  
+  // 各感情の値をデータセットに追加
+  appData.emotions.forEach(emotion => {
+    const englishName = emotion.english;
+    // Face-APIの表情名に合わせる
+    const apiName = (englishName === 'neutral' && emotion.name === '軽蔑') ? 'neutral' : englishName;
+    
+    // 対応する表情の信頼度を取得 (検出されていない場合は0)
+    const confidence = expressions[apiName] || 0;
+    
+    // グラフデータの更新
+    if (appState.emotionChart) {
+      const dataset = appState.emotionChart.data.datasets.find(ds => ds.label === emotion.name);
+      if (dataset) {
+        dataset.data.push({
+          x: now,
+          y: confidence * 100
+        });
+      }
     }
   });
   
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-      processUploadedImage(e.target.files[0]);
-    }
-  });
+  // グラフの更新
+  if (appState.emotionChart) {
+    appState.emotionChart.update('quiet'); // パフォーマンス向上のため'quiet'モードで更新
+  }
 }
 
-// Camera Functionality
-function initCameraFunctionality() {
-  const startBtn = document.getElementById('start-camera');
-  const captureBtn = document.getElementById('capture-photo');
-  const stopBtn = document.getElementById('stop-camera');
-  const video = document.getElementById('camera-video');
+// グラフの初期化
+function initializeChart() {
+  if (!elements.emotionChart) {
+    console.error('チャートのcanvas要素が見つかりません');
+    return;
+  }
   
-  startBtn.addEventListener('click', startCamera);
-  captureBtn.addEventListener('click', capturePhoto);
-  stopBtn.addEventListener('click', stopCamera);
-}
-
-// Real-time Functionality
-function initRealtimeFunctionality() {
-  const startBtn = document.getElementById('start-realtime');
-  const pauseBtn = document.getElementById('pause-realtime');
-  const clearBtn = document.getElementById('clear-data');
+  const ctx = elements.emotionChart.getContext('2d');
   
-  startBtn.addEventListener('click', startRealtimeAnalysis);
-  pauseBtn.addEventListener('click', pauseRealtimeAnalysis);
-  clearBtn.addEventListener('click', clearChartData);
-  
-  initEmotionChart();
-}
-
-// Initialize Chart.js with simpler configuration
-function initEmotionChart() {
-  const ctx = document.getElementById('emotion-chart').getContext('2d');
-  
-  const datasets = appData.emotions.map(emotion => ({
-    label: emotion,
-    borderColor: appData.chartColors[emotion],
-    backgroundColor: appData.chartColors[emotion] + '20',
+  // データセットの作成
+  const datasets = appData.emotions.map((emotion, index) => ({
+    label: emotion.name,
     data: [],
+    backgroundColor: emotion.color,
+    borderColor: emotion.color,
+    borderWidth: 2,
+    pointRadius: 0,
     fill: false,
-    tension: 0.4,
-    pointRadius: 2
+    tension: 0.4
   }));
-
-  emotionChart = new Chart(ctx, {
+  
+  // グラフの設定
+  appState.emotionChart = new Chart(ctx, {
     type: 'line',
-    data: { datasets },
+    data: {
+      datasets: datasets
+    },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false, // パフォーマンス向上のためアニメーションを無効化
       interaction: {
-        intersect: false,
-        mode: 'index'
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            usePointStyle: true,
+            boxWidth: 10
+          }
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false
+        },
+        streaming: {
+          duration: appData.systemData.analysisParameters.displayDuration,
+          refresh: 1000,
+          delay: 1000,
+          frameRate: 30,
+          pause: false
+        }
       },
       scales: {
         x: {
-          type: 'linear',
-          position: 'bottom',
+          type: 'realtime',
+          realtime: {
+            duration: appData.systemData.analysisParameters.displayDuration,
+            refresh: 1000,
+            delay: 1000,
+            onRefresh: chart => {
+              // ストリーミング更新時の処理（空でOK）
+            }
+          },
           title: {
             display: true,
-            text: '時間 (秒)'
+            text: '時間'
           }
         },
         y: {
           beginAtZero: true,
-          max: 1,
+          max: 100,
           title: {
             display: true,
-            text: '感情強度'
+            text: '信頼度 (%)'
           }
-        }
-      },
-      plugins: {
-        legend: {
-          display: true,
-          position: 'top'
         }
       }
     }
   });
+  
+  console.log('感情グラフが初期化されました');
 }
 
-// Process uploaded image
-function processUploadedImage(file) {
-  if (!file.type.startsWith('image/')) {
-    alert('画像ファイルを選択してください。');
-    return;
+// エラーメッセージの表示
+function showError(message) {
+  // 既存のエラーメッセージを削除
+  document.querySelectorAll('.error-message').forEach(el => el.remove());
+  
+  // 新しいエラーメッセージを作成
+  const errorElement = document.createElement('div');
+  errorElement.className = 'error-message';
+  errorElement.textContent = message;
+  
+  // タブコンテンツの先頭に挿入
+  const activeTab = document.querySelector('.tab-pane.active');
+  if (activeTab) {
+    activeTab.insertBefore(errorElement, activeTab.firstChild);
+  } else {
+    document.querySelector('.tab-content').appendChild(errorElement);
   }
   
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    analyzeImage(e.target.result, 'upload');
-  };
-  reader.readAsDataURL(file);
+  // 5秒後に自動的に消える
+  setTimeout(() => {
+    errorElement.remove();
+  }, 5000);
 }
 
-// Start camera
-async function startCamera() {
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({ 
-      video: { width: 640, height: 480 } 
-    });
-    
-    const video = document.getElementById('camera-video');
-    video.srcObject = cameraStream;
-    
-    document.getElementById('start-camera').style.display = 'none';
-    document.getElementById('capture-photo').style.display = 'inline-flex';
-    document.getElementById('stop-camera').style.display = 'inline-flex';
-  } catch (error) {
-    alert('カメラアクセスに失敗しました: ' + error.message);
-  }
-}
-
-// Capture photo
-function capturePhoto() {
-  const video = document.getElementById('camera-video');
-  const canvas = document.getElementById('camera-canvas');
-  const ctx = canvas.getContext('2d');
+// アプリケーションの初期化
+function initializeApp() {
+  // ボタンのイベントリスナー
+  elements.startButton.addEventListener('click', startCamera);
+  elements.stopButton.addEventListener('click', stopCamera);
   
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  ctx.drawImage(video, 0, 0);
+  // グラフの初期化
+  initializeChart();
   
-  const imageData = canvas.toDataURL('image/jpeg');
-  analyzeImage(imageData, 'camera');
-}
-
-// Stop camera
-function stopCamera() {
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(track => track.stop());
-    cameraStream = null;
+  // DOMが確実に構築されているか確認
+  if (elements.video && elements.overlay && elements.emotionChart) {
+    console.log('DOM要素が正常に初期化されました');
+  } else {
+    console.warn('一部のDOM要素が見つかりません');
   }
   
-  document.getElementById('start-camera').style.display = 'inline-flex';
-  document.getElementById('capture-photo').style.display = 'none';
-  document.getElementById('stop-camera').style.display = 'none';
+  console.log('アプリケーションが初期化されました');
 }
 
-// Start real-time analysis with simplified approach
-function startRealtimeAnalysis() {
-  if (isRealtimeActive) return;
-  
-  // Start without camera for demonstration purposes
-  isRealtimeActive = true;
-  frameCount = 0;
-  
-  document.getElementById('start-realtime').style.display = 'none';
-  document.getElementById('pause-realtime').style.display = 'inline-flex';
-  
-  // Start the data generation interval
-  const startTime = Date.now();
-  realtimeInterval = setInterval(() => {
-    if (isRealtimeActive) {
-      const currentTime = (Date.now() - startTime) / 1000; // Convert to seconds
-      updateRealtimeData(currentTime);
-      frameCount++;
-      updateFrameCount();
-    }
-  }, appData.systemConfig.updateInterval);
-  
-  // Initial update
-  updateRealtimeData(0);
-}
-
-// Pause real-time analysis
-function pauseRealtimeAnalysis() {
-  isRealtimeActive = false;
-  
-  if (realtimeInterval) {
-    clearInterval(realtimeInterval);
-    realtimeInterval = null;
-  }
-  
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(track => track.stop());
-    cameraStream = null;
-  }
-  
-  document.getElementById('start-realtime').style.display = 'inline-flex';
-  document.getElementById('pause-realtime').style.display = 'none';
-}
-
-// Clear chart data
-function clearChartData() {
-  emotionChart.data.datasets.forEach(dataset => {
-    dataset.data = [];
-  });
-  emotionChart.update();
-  
-  frameCount = 0;
-  updateStatistics('中立', 0);
-  updateQuantumMetrics();
-  updateFrameCount();
-}
-
-// Update real-time data for chart
-function updateRealtimeData(currentTime) {
-  const emotionData = generateEmotionData();
-  
-  emotionChart.data.datasets.forEach((dataset, index) => {
-    const emotion = appData.emotions[index];
-    const value = emotionData.emotions[emotion] || 0;
-    
-    dataset.data.push({
-      x: currentTime,
-      y: value
-    });
-    
-    // Keep only last 30 data points
-    if (dataset.data.length > appData.systemConfig.maxDataPoints) {
-      dataset.data.shift();
-    }
-  });
-  
-  emotionChart.update('none'); // Update without animation for better performance
-  
-  const primaryEmotion = getPrimaryEmotion(emotionData.emotions);
-  const confidence = emotionData.confidence;
-  
-  updateStatistics(primaryEmotion, confidence);
-  updateQuantumMetrics();
-}
-
-// Analyze image (simulation)
-function analyzeImage(imageData, mode) {
-  const emotionData = generateEmotionData();
-  displayEmotionResults(emotionData, mode);
-}
-
-// Generate simulated emotion data with more realistic patterns
-function generateEmotionData() {
-  const emotions = {};
-  
-  // Create more realistic emotion patterns
-  const time = Date.now() / 1000;
-  const baseNoise = 0.1;
-  
-  appData.emotions.forEach((emotion, index) => {
-    // Use sine waves with different frequencies and phases for each emotion
-    const frequency = 0.1 + (index * 0.05);
-    const phase = index * Math.PI / 4;
-    const amplitude = 0.3 + Math.random() * 0.4;
-    
-    let value = amplitude * Math.sin(frequency * time + phase) + 0.5;
-    value += (Math.random() - 0.5) * baseNoise; // Add noise
-    value = Math.max(0, Math.min(1, value)); // Clamp between 0 and 1
-    
-    emotions[emotion] = value;
-  });
-  
-  // Ensure one emotion is somewhat dominant
-  const dominantIndex = Math.floor(time / 5) % appData.emotions.length;
-  const dominantEmotion = appData.emotions[dominantIndex];
-  emotions[dominantEmotion] = Math.min(1, emotions[dominantEmotion] * 1.5);
-  
-  return {
-    emotions,
-    confidence: 0.6 + Math.random() * 0.35,
-    timestamp: Date.now()
-  };
-}
-
-// Display emotion results
-function displayEmotionResults(data, mode) {
-  const container = document.getElementById(`${mode}-emotions`);
-  const metricsContainer = document.getElementById(`${mode}-metrics`);
-  
-  container.innerHTML = '';
-  
-  Object.entries(data.emotions).forEach(([emotion, value]) => {
-    const bar = document.createElement('div');
-    bar.className = 'emotion-bar';
-    
-    bar.innerHTML = `
-      <div class="emotion-label">${emotion}</div>
-      <div class="emotion-progress">
-        <div class="emotion-fill" style="width: ${value * 100}%; background-color: ${appData.chartColors[emotion]};"></div>
-      </div>
-      <div class="emotion-value">${(value * 100).toFixed(1)}%</div>
-    `;
-    
-    container.appendChild(bar);
-  });
-  
-  // Update quantum metrics
-  metricsContainer.innerHTML = `
-    <div class="quantum-metric">
-      <label>量子相関係数</label>
-      <div class="metric-value">${(0.7 + Math.random() * 0.3).toFixed(3)}</div>
-    </div>
-    <div class="quantum-metric">
-      <label>重ね合わせ状態</label>
-      <div class="metric-value">${(0.6 + Math.random() * 0.4).toFixed(3)}</div>
-    </div>
-    <div class="quantum-metric">
-      <label>処理効率</label>
-      <div class="metric-value">${(200 + Math.random() * 100).toFixed(0)}%</div>
-    </div>
-  `;
-  
-  document.getElementById(`${mode}-result`).style.display = 'block';
-}
-
-// Get primary emotion
-function getPrimaryEmotion(emotions) {
-  let maxValue = 0;
-  let primaryEmotion = '中立';
-  
-  Object.entries(emotions).forEach(([emotion, value]) => {
-    if (value > maxValue) {
-      maxValue = value;
-      primaryEmotion = emotion;
-    }
-  });
-  
-  return primaryEmotion;
-}
-
-// Update statistics display
-function updateStatistics(primaryEmotion, confidence) {
-  document.getElementById('primary-emotion').textContent = primaryEmotion;
-  document.getElementById('confidence-value').textContent = `${(confidence * 100).toFixed(1)}%`;
-}
-
-// Update quantum metrics
-function updateQuantumMetrics() {
-  const correlation = appData.quantumFeatures.correlationRange[0] + 
-    Math.random() * (appData.quantumFeatures.correlationRange[1] - appData.quantumFeatures.correlationRange[0]);
-  
-  const superposition = appData.quantumFeatures.superpositionRange[0] + 
-    Math.random() * (appData.quantumFeatures.superpositionRange[1] - appData.quantumFeatures.superpositionRange[0]);
-  
-  const spikeFreq = appData.neuromorphicMetrics.spikeFrequencyRange[0] + 
-    Math.random() * (appData.neuromorphicMetrics.spikeFrequencyRange[1] - appData.neuromorphicMetrics.spikeFrequencyRange[0]);
-  
-  const powerReduction = appData.neuromorphicMetrics.powerReductionRange[0] + 
-    Math.random() * (appData.neuromorphicMetrics.powerReductionRange[1] - appData.neuromorphicMetrics.powerReductionRange[0]);
-  
-  document.getElementById('quantum-correlation').textContent = correlation.toFixed(3);
-  document.getElementById('superposition').textContent = superposition.toFixed(3);
-  document.getElementById('spike-frequency').textContent = `${spikeFreq.toFixed(0)} Hz`;
-  document.getElementById('power-reduction').textContent = `${powerReduction.toFixed(1)}%`;
-}
-
-// Update frame count
-function updateFrameCount() {
-  document.getElementById('frame-count').textContent = frameCount.toString();
-}
-
-// Handle window unload
-window.addEventListener('beforeunload', () => {
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(track => track.stop());
-  }
-  if (realtimeInterval) {
-    clearInterval(realtimeInterval);
-  }
-});
-
-// Handle visibility change
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && isRealtimeActive) {
-    pauseRealtimeAnalysis();
-  }
+// ページロード時にFace-API.jsモデルをロード
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOMContentLoaded イベントが発火しました');
+  setTimeout(() => {
+    loadFaceApiModels();
+  }, 500); // ブラウザがDOM構築を完了するための短い遅延
 });
