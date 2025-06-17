@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QBH-FER 表情認識システム</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>QBH-FER 表情認識システム</h1>
+            <p class="subtitle">量子生体ハイブリッド表情認識技術</p>
+        </header>
+
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="upload">画像アップロード</button>
+            <button class="tab-btn" data-tab="camera">カメラ撮影</button>
+            <button class="tab-btn" data-tab="realtime">リアルタイム分析</button>
+        </nav>
+
+        <main class="main-content">
+            <!-- 画像アップロードタブ -->
+            <div class="tab-content active" id="upload-tab">
+                <div class="card">
+                    <div class="card__body">
+                        <h2>画像をアップロード</h2>
+                        <div class="upload-area" id="upload-area">
+                            <div class="upload-content">
+                                <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7,10 12,15 17,10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                <p>画像をドラッグ&ドロップ または クリックして選択</p>
+                                <input type="file" id="file-input" accept="image/*" class="file-input">
+                            </div>
+                        </div>
+                        <canvas id="upload-canvas" class="analysis-canvas hidden"></canvas>
+                        <div id="upload-results" class="results hidden"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- カメラ撮影タブ -->
+            <div class="tab-content" id="camera-tab">
+                <div class="card">
+                    <div class="card__body">
+                        <h2>カメラで撮影</h2>
+                        <div class="camera-container">
+                            <video id="camera-video" class="camera-video" autoplay muted playsinline></video>
+                            <canvas id="camera-canvas" class="analysis-canvas hidden"></canvas>
+                        </div>
+                        <div class="camera-controls">
+                            <button class="btn btn--primary" id="start-camera">カメラ開始</button>
+                            <button class="btn btn--secondary hidden" id="capture-photo">写真撮影</button>
+                            <button class="btn btn--outline hidden" id="stop-camera">カメラ停止</button>
+                        </div>
+                        <div id="camera-results" class="results hidden"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- リアルタイム分析タブ -->
+            <div class="tab-content" id="realtime-tab">
+                <div class="realtime-layout">
+                    <div class="realtime-video-section">
+                        <div class="card">
+                            <div class="card__body">
+                                <h2>リアルタイム表情分析</h2>
+                                <div class="camera-container">
+                                    <video id="realtime-video" class="camera-video" autoplay muted playsinline></video>
+                                    <canvas id="realtime-overlay" class="overlay-canvas"></canvas>
+                                </div>
+                                <div class="realtime-controls">
+                                    <button class="btn btn--primary" id="start-realtime">分析開始</button>
+                                    <button class="btn btn--outline hidden" id="stop-realtime">分析停止</button>
+                                </div>
+                                <div id="current-emotion" class="current-emotion hidden">
+                                    <h3>現在の表情</h3>
+                                    <div class="emotion-display">
+                                        <span class="emotion-name">-</span>
+                                        <span class="emotion-confidence">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="realtime-chart-section">
+                        <div class="card">
+                            <div class="card__body">
+                                <h3>感情変化グラフ</h3>
+                                <div class="chart-container">
+                                    <canvas id="emotion-chart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ローディング表示 -->
+        <div id="loading" class="loading hidden">
+            <div class="loading-spinner"></div>
+            <p>モデルを読み込み中...</p>
+        </div>
+
+        <!-- エラーメッセージ -->
+        <div id="error-message" class="error-message hidden">
+            <div class="error-content">
+                <h3>エラーが発生しました</h3>
+                <p id="error-text"></p>
+                <button class="btn btn--secondary" onclick="hideError()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
